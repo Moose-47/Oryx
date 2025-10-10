@@ -10,6 +10,19 @@
 class UInputAction;
 class UInputMappingContext;
 class UNiagaraComponent;
+class ALandingPad;
+
+UENUM(BlueprintType)
+enum class ELandingStage : uint8
+{
+	None,
+	RotateToPad,        // Rotate to face pad
+	MoveToPad,          // Move forward towards pad
+	ApplyBrakes,        // Activate brakes VFX
+	AlignRotation,      // Match pad rotation
+	Descend,            // Descend vertically
+	Finished
+};
 
 UCLASS()
 class ORYX_API ASpaceshipPawn : public APawn
@@ -40,6 +53,11 @@ protected:
 	void OnRightThrust(const FInputActionValue& Value);
 	void OnAllThrusters(const FInputActionValue& Value);
 	void OnBrake(const FInputActionValue& Value);
+	void OnLand(const FInputActionValue& Value);
+
+public:
+	UFUNCTION()
+	void StartLanding(ALandingPad* LandingPad);
 
 protected:
 	//Components
@@ -67,6 +85,9 @@ protected:
 
 	UPROPERTY(EditDefaultsOnly, Category = "Input")
 	UInputAction* IA_Brake;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Input")
+	UInputAction* IA_Land;
 
 	//Empty scene components for position thrusters forces
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Ship|Thrusters")
@@ -137,4 +158,21 @@ protected:
 	bool bRightThrust = false;
 	bool bAllThrusters = false;
 	bool bBrake = false;
+
+	//Landing Sequence
+	bool bIsLanding = false;
+	ALandingPad* TargetLandingPad = nullptr;
+
+	UPROPERTY(EditAnywhere, Category = "Landing")
+	float LandingMoveSpeed = 500.f;
+	UPROPERTY(EditAnywhere, Category = "Landing")
+	float LandingRotateSpeed = 0.5f;
+	UPROPERTY(EditAnywhere, Category = "Landing")
+	float LandingDescendSpeed = 200.f;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Landing")
+	ELandingStage LandingStage = ELandingStage::None;
+
+public:
+	ALandingPad* OverlappingLandingPad = nullptr;
 };

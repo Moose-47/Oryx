@@ -11,6 +11,7 @@
 #include "Engine/World.h"						//For world context.
 #include "Components/StaticMeshComponent.h"		//To define and modify the ship's static mesh.
 #include "Components/SceneComponent.h"			//For scene components (thruster attach points).
+#include "LandingPad.h"							//For referencing landing pad.
 
 //Constructor - Sets up component heirarchy, physics, and vfx
 ASpaceshipPawn::ASpaceshipPawn()
@@ -114,8 +115,195 @@ void ASpaceshipPawn::BeginPlay()
 void ASpaceshipPawn::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
-	//Update input-based states
+
 	RestrictMouseToCircle(); //Clamp mouse offset for steering
+
+	//Landing sequence logic
+	if (bIsLanding && TargetLandingPad)
+	{
+		//Current ship and landing pad position
+		FVector ShipLocation = GetActorLocation();
+		FVector PadLocation = TargetLandingPad->GetActorLocation();
+
+		//Define a target above the pad to approach before descending
+		FVector TargetAbovePad = PadLocation + FVector(0.f, 0.f, 1000.f); //vertical offset above the pad
+		FVector DirectionToPad = (TargetAbovePad - ShipLocation); //Vector from ship to pad
+		float DistanceToTarget = DirectionToPad.Size();
+		DirectionToPad.Normalize();
+
+		//Get current rotation of the ship
+		FRotator CurrentRot = GetActorRotation();
+		FRotator TargetRot = DirectionToPad.Rotation(); //Converts direction vector to rotator
+		FRotator NewRot = CurrentRot; //New rotation to interpolate toward
+
+
+		switch (LandingStage)
+		{
+		case ELandingStage::RotateToPad: //Face towards pad
+		{
+			//Ensuring all VFX are deactivate upon landing sequence starting
+			if (MainThrusterFX->IsActive()) MainThrusterFX->Deactivate();
+			if (LeftThrusterFX->IsActive()) LeftThrusterFX->Deactivate();
+			if (RightThrusterFX->IsActive()) RightThrusterFX->Deactivate();
+			if (RightBrakeThrusterFX->IsActive()) RightBrakeThrusterFX->Deactivate();
+			if (LeftBrakeThrusterFX->IsActive()) LeftBrakeThrusterFX->Deactivate();
+
+			//Interpolate current rotation toward target rotation
+			//FMath::RInterpTo performs frame-independent rotation interpolation
+			NewRot = FMath::RInterpTo(CurrentRot, TargetRot, DeltaTime, LandingRotateSpeed);
+			SetActorRotation(NewRot);
+
+			//Ensuring ship is rotated within +/- 2.5 degrees on all axis
+			if (FMath::Abs(NewRot.Pitch - TargetRot.Pitch) < 2.5f &&
+				FMath::Abs(NewRot.Yaw - TargetRot.Yaw) < 2.5f &&
+				FMath::Abs(NewRot.Roll - TargetRot.Roll) < 2.5f)
+			{
+				LandingStage = ELandingStage::MoveToPad; //Go to moving phase
+				if (!MainThrusterFX->IsActive()) MainThrusterFX->Activate(true);
+			}
+			break;
+		}
+
+		case ELandingStage::MoveToPad: //Move towards pad
+		{
+			//Move ship forward along normalized direction vector
+			FVector NewLocation = ShipLocation + DirectionToPad * LandingMoveSpeed * DeltaTime;
+			SetActorLocation(NewLocation);
+
+			if (DistanceToTarget < 1000.f) //When ship within the specified range begin braking
+			{
+				LandingStage = ELandingStage::ApplyBrakes;
+				if (MainThrusterFX->IsActive()) MainThrusterFX->Deactivate();
+				if (!LeftBrakeThrusterFX->IsActive()) LeftBrakeThrusterFX->Activate(true);
+				if (!RightBrakeThrusterFX->IsActive()) RightBrakeThrusterFX->Activate(true);
+			}
+			break;
+		}
+
+		case ELandingStage::ApplyBrakes: //Apply 'brakes' slowing approach
+		{
+			float SlowSpeed = LandingMoveSpeed * 0.4f; //Reduce speed to 40% of the previous speed
+
+			//Continue moving toward target
+			FVector NewLocation = ShipLocation + DirectionToPad * SlowSpeed * DeltaTime;
+			SetActorLocation(NewLocation);
+
+			if (DistanceToTarget < 300.f) //When ship within the specified range begin rotational alignment
+			{
+				LandingStage = ELandingStage::AlignRotation;
+				LeftBrakeThrusterFX->Deactivate();
+				RightBrakeThrusterFX->Deactivate();
+			}
+			break;
+		}
+
+		case ELandingStage::AlignRotation:
+		{
+			//Get pad yaw rotation
+			float PadYaw = TargetLandingPad->GetActorRotation().Yaw;
+
+			//Normalize to 0–360 range
+			auto Normalize360 = [](float Angle)
+				{
+					Angle = FMath::Fmod(Angle, 360.f);
+					if (Angle < 0.f)
+						Angle += 360.f;
+					return Angle;
+				};
+
+			//Normalize both the pads yaw and our ships yaw to a clean 0-360 range
+			float ShipYaw = Normalize360(CurrentRot.Yaw);
+			PadYaw = Normalize360(PadYaw);
+
+			//The landing pad will only ever be flat in 1 of 4 angles(0, 90, 180, or 270 degrees)
+			//They are then grouped into 2 families (X-Axis facing -> 0 or 180) (Y-Axis facing -> 90 or 270)
+			//Group is decided based on the pads facing
+			TArray<float> PossibleYaws;
+			if (FMath::Abs(FRotator::NormalizeAxis(PadYaw - 0.f)) < 1.f ||
+				FMath::Abs(FRotator::NormalizeAxis(PadYaw - 180.f)) < 1.f)
+			{
+				//Pad is facing along X-axis, so valid target yaws are 0 or 180
+				PossibleYaws = { 0.f, 180.f };
+			}
+			else
+			{
+				//Pad is facing along Y-axis, so valid target yaws are 90 or 270
+				PossibleYaws = { 90.f, 270.f };
+			}
+
+			//Find which of those two angles is closest to our current ship yaw
+			float ClosestYaw = PossibleYaws[0]; //Start with the first option
+			float SmallestDiff = 9999.f; //A large number so the first real difference will replace it
+			for (float YawOption : PossibleYaws) //Loop through each possible yaw in the group
+			{
+				float Diff = FMath::Abs(FRotator::NormalizeAxis(YawOption - ShipYaw));
+				if (Diff < SmallestDiff)
+				{
+					//Found the closer option, update our target
+					SmallestDiff = Diff;
+					ClosestYaw = YawOption;
+				}
+			}
+
+			//Create smooth rotation
+			TargetRot = FRotator(0.f, ClosestYaw, 0.f); //Only rotate around yaw, keep pitch/roll at 0
+
+			//RinterpTo smoothly interpolates between the ships current rotation and its target rotation over time
+			NewRot = FMath::RInterpTo(CurrentRot, TargetRot, DeltaTime, LandingRotateSpeed);
+			SetActorRotation(NewRot); //Apply the new smoothed rotation to the ship
+
+			//Small drift motion toward pad
+			FVector DriftDirection = (PadLocation - ShipLocation).GetSafeNormal();
+			FVector NewLocation = ShipLocation + DriftDirection * (LandingMoveSpeed * 0.2f) * DeltaTime;
+			SetActorLocation(NewLocation);
+
+			//Once aligned, move to next stage
+			//NormalizeAxis ensures that 359 degrees and 0 degrees are treated as a 1 degree difference and not 359
+			if (FMath::Abs(FRotator::NormalizeAxis(NewRot.Yaw - TargetRot.Yaw)) < 1.f)
+			{
+				LandingStage = ELandingStage::Descend;
+			}
+
+			break;
+		}
+
+		case ELandingStage::Descend: //Descend to pad
+		{
+			//Move ship downward by LandingDescendSpeed per second
+			FVector DescendLoc = ShipLocation;
+			DescendLoc.Z -= LandingDescendSpeed * DeltaTime;
+
+			//'true' enableds collision chekcs during movement
+			SetActorLocation(DescendLoc, true);
+
+			//Stop descending once ships Z is close to the pads surface
+			if (ShipLocation.Z <= PadLocation.Z + 300.f)
+			{
+
+				LandingStage = ELandingStage::Finished;
+				bIsLanding = false; //Landing complete
+
+				//Ensures all VFX used during landing sequence are deactivated
+				MainThrusterFX->Deactivate();
+				LeftBrakeThrusterFX->Deactivate();
+				RightBrakeThrusterFX->Deactivate();
+
+				if (GEngine)
+				{
+					GEngine->AddOnScreenDebugMessage(-1, 3.f, FColor::Green, TEXT("Landing Complete"));
+				}
+			}
+			break;
+		}
+
+		default:
+			break;
+		}
+
+		return;
+	}
+
+	//Update input-based states
 	UpdateRotation(DeltaTime); //Smoothly rotate towards mouse offset
 	ApplyThrusters(DeltaTime); //Apply forces based on active thrusters
 }
@@ -146,6 +334,9 @@ void ASpaceshipPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputCompo
 		//Brake/Reverse thrusters (LShift)
 		EIC->BindAction(IA_Brake, ETriggerEvent::Triggered, this, &ASpaceshipPawn::OnBrake);
 		EIC->BindAction(IA_Brake, ETriggerEvent::Completed, this, &ASpaceshipPawn::OnBrake);
+
+		//Landing (E)
+		EIC->BindAction(IA_Land, ETriggerEvent::Triggered, this, &ASpaceshipPawn::OnLand);
 	}
 }
 
@@ -312,4 +503,30 @@ void ASpaceshipPawn::ApplyThrusters(float DeltaTime)
 		LeftBrakeThrusterFX->SetActive(false);
 		RightBrakeThrusterFX->SetActive(false);
 	}
+}
+
+void ASpaceshipPawn::OnLand(const FInputActionValue& Value)
+{
+	if (bIsLanding) return;
+
+	if (OverlappingLandingPad)
+	{
+		StartLanding(OverlappingLandingPad);
+	}
+}
+
+void ASpaceshipPawn::StartLanding(ALandingPad* LandingPad)
+{
+	if (!LandingPad) return;
+
+	TargetLandingPad = LandingPad;
+	bIsLanding = true;
+
+	bForwardThrust = false;
+	bLeftThrust = false;
+	bRightThrust = false;
+	bAllThrusters = false;
+	bBrake = false;
+
+	LandingStage = ELandingStage::RotateToPad;
 }
