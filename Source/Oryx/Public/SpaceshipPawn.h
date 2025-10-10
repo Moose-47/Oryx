@@ -7,13 +7,18 @@
 #include "NiagaraComponent.h"
 #include "SpaceshipPawn.generated.h"
 
+//Forward class declarations tell the compiler that the class exists and will be defined elsewhere
+//This allows me to declare pointers (*) or references (&) to objects of that class
+//I cannot access any member variables or functions of the class until I include its full definition (header)
+#pragma region Forward Class Declarations
 class UInputAction;
 class UInputMappingContext;
 class UNiagaraComponent;
 class ALandingPad;
+#pragma endregion
 
 UENUM(BlueprintType)
-enum class ELandingStage : uint8
+enum class ELandingStage : uint8 //uint8 to use 1 byte in memory
 {
 	None,
 	RotateToPad,        // Rotate to face pad
@@ -38,6 +43,7 @@ protected:
 	virtual void Tick(float DeltaTime) override;
 	virtual void SetupPlayerInputComponent(UInputComponent* PlayerInputComponent) override;
 
+#pragma region Functions
 	//Resict mouse movement to circular radius and calculate offset
 	void RestrictMouseToCircle();
 
@@ -47,24 +53,45 @@ protected:
 	//Applied currently active thrusts
 	void ApplyThrusters(float DeltaTime);
 
-	//Input Action Callbacks
+	//Begins the landing process
+	void StartLanding(ALandingPad* LandingPad);
+
+	//Function handles the actual landing functionality
+	void LandingSequence(float DeltaTime);
+#pragma endregion
+
+#pragma region Input Action Callbacks
 	void OnForwardThrust(const FInputActionValue& Value);
 	void OnLeftThrust(const FInputActionValue& Value);
 	void OnRightThrust(const FInputActionValue& Value);
 	void OnAllThrusters(const FInputActionValue& Value);
 	void OnBrake(const FInputActionValue& Value);
 	void OnLand(const FInputActionValue& Value);
-
-public:
-	UFUNCTION()
-	void StartLanding(ALandingPad* LandingPad);
+#pragma endregion
 
 protected:
-	//Components
+#pragma region Ship mesh and Thruster Components
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Ship")
 	UStaticMeshComponent* ShipMesh;
 
-	//Input Actions
+	//Empty scene components for position thrusters forces
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Ship|Thrusters")
+	USceneComponent* MainThruster;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Ship|Thrusters")
+	USceneComponent* LeftThruster;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Ship|Thrusters")
+	USceneComponent* RightThruster;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Ship|Thrusters")
+	USceneComponent* ReverseLeftThruster;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Ship|Thrusters")
+	USceneComponent* ReverseRightThruster;
+#pragma endregion
+
+#pragma region Input Actions
 	UPROPERTY(EditDefaultsOnly, Category = "Input")
 	UInputMappingContext* ShipMappingContext;
 
@@ -88,23 +115,9 @@ protected:
 
 	UPROPERTY(EditDefaultsOnly, Category = "Input")
 	UInputAction* IA_Land;
+#pragma endregion
 
-	//Empty scene components for position thrusters forces
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Ship|Thrusters")
-	USceneComponent* MainThruster;
-
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Ship|Thrusters")
-	USceneComponent* LeftThruster;
-
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Ship|Thrusters")
-	USceneComponent* RightThruster;
-
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Ship|Thrusters")
-	USceneComponent* ReverseLeftThruster;
-
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Ship|Thrusters")
-	USceneComponent* ReverseRightThruster;
-
+#pragma region Rotation Settings and Thruster forces
 	//Rotation Settings
 	UPROPERTY(EditAnywhere, Category = "Ship|Rotation")
 	float MaxMouseRadius = 200.f;
@@ -118,8 +131,9 @@ protected:
 
 	UPROPERTY(EditAnywhere, Category = "Ship|Forces")
 	float SideThrusterForce = 5000.f;
+#pragma endregion
 
-	// Thruster particles
+#pragma region Thruster particle effects
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Ship|Effects")
 	UNiagaraComponent* MainThrusterFX;
 
@@ -149,18 +163,21 @@ protected:
 
 	UPROPERTY(EditAnywhere, Category = "Ship|Effects")
 	UNiagaraSystem* RightBrakeThrusterEffect;
+#pragma endregion
 
-	//State
+#pragma region Variables
 	FVector2D MouseOffset;
 
+	//State
 	bool bForwardThrust = false;
 	bool bLeftThrust = false;
 	bool bRightThrust = false;
 	bool bAllThrusters = false;
 	bool bBrake = false;
-
-	//Landing Sequence
 	bool bIsLanding = false;
+#pragma endregion
+
+#pragma region Landing
 	ALandingPad* TargetLandingPad = nullptr;
 
 	UPROPERTY(EditAnywhere, Category = "Landing")
@@ -175,4 +192,5 @@ protected:
 
 public:
 	ALandingPad* OverlappingLandingPad = nullptr;
+#pragma endregion
 };
