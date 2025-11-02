@@ -4,9 +4,9 @@
 #include "Components/StaticMeshComponent.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
+#include "InputAction.h"
 #include "GameFramework/PlayerController.h"
 #include "Engine/World.h"
-#include "DrawDebugHelpers.h"
 #include "GravityGun.h"
 
 APlayerPawnController::APlayerPawnController()
@@ -46,30 +46,23 @@ void APlayerPawnController::BeginPlay()
         }
     }
 
-    //Spawn gravity gun
     if (GravityGunClass)
     {
         FActorSpawnParameters SpawnParams;
         SpawnParams.Owner = this;
         SpawnParams.Instigator = GetInstigator();
-
         GravityGun = GetWorld()->SpawnActor<AGravityGun>(GravityGunClass, FVector::ZeroVector, FRotator::ZeroRotator, SpawnParams);
         if (GravityGun)
-        {
             GravityGun->AttachToComponent(Camera, FAttachmentTransformRules::KeepRelativeTransform);
-        }
     }
 }
 
 void APlayerPawnController::Tick(float DeltaTime)
 {
     Super::Tick(DeltaTime);
-
     CheckGrounded();
 
     FVector Velocity = Capsule->GetPhysicsLinearVelocity();
-
-    //Gravity
     if (!bIsGrounded)
     {
         Velocity.Z += Gravity * DeltaTime;
@@ -80,13 +73,12 @@ void APlayerPawnController::Tick(float DeltaTime)
         Velocity.Z = 0.f;
     }
 
-    //Horizontal movement
     FVector Forward = Camera->GetForwardVector();
     FVector Right = Camera->GetRightVector();
     Forward.Z = 0.f; Forward.Normalize();
     Right.Z = 0.f; Right.Normalize();
 
-    FVector2D DesiredDir(MoveInput.X, MoveInput.Y);
+    FVector2D DesiredDir = MoveInput;
     if (DesiredDir.SizeSquared() > 1.f) DesiredDir.Normalize();
 
     FVector2D TargetVel = DesiredDir * MoveSpeed;
@@ -105,25 +97,52 @@ void APlayerPawnController::SetupPlayerInputComponent(UInputComponent* PlayerInp
     Super::SetupPlayerInputComponent(PlayerInputComponent);
     if (UEnhancedInputComponent* EIC = Cast<UEnhancedInputComponent>(PlayerInputComponent))
     {
+        // Movement
         EIC->BindAction(ForwardAction, ETriggerEvent::Started, this, &APlayerPawnController::ForwardPressed);
         EIC->BindAction(ForwardAction, ETriggerEvent::Completed, this, &APlayerPawnController::ForwardReleased);
+
         EIC->BindAction(BackwardAction, ETriggerEvent::Started, this, &APlayerPawnController::BackwardPressed);
         EIC->BindAction(BackwardAction, ETriggerEvent::Completed, this, &APlayerPawnController::BackwardReleased);
+
         EIC->BindAction(LeftAction, ETriggerEvent::Started, this, &APlayerPawnController::LeftPressed);
         EIC->BindAction(LeftAction, ETriggerEvent::Completed, this, &APlayerPawnController::LeftReleased);
+
         EIC->BindAction(RightAction, ETriggerEvent::Started, this, &APlayerPawnController::RightPressed);
         EIC->BindAction(RightAction, ETriggerEvent::Completed, this, &APlayerPawnController::RightReleased);
 
+        // Look & Jump
         EIC->BindAction(LookAction, ETriggerEvent::Triggered, this, &APlayerPawnController::Look);
         EIC->BindAction(JumpAction, ETriggerEvent::Started, this, &APlayerPawnController::Jump);
 
-        //Gravity gun
-        EIC->BindAction(GravityGrabAction, ETriggerEvent::Started, this, &APlayerPawnController::GrabObject);
-        EIC->BindAction(GravityGrabAction, ETriggerEvent::Completed, this, &APlayerPawnController::ReleaseObject);
+        //Gravity Gun
+        EIC->BindAction(GravityGrabAction, ETriggerEvent::Started, this, &APlayerPawnController::ToggleGrab);
+
+        // Rotation 
+        EIC->BindAction(RotateRightAction, ETriggerEvent::Started, this, &APlayerPawnController::StartRotateRight);
+        EIC->BindAction(RotateRightAction, ETriggerEvent::Completed, this, &APlayerPawnController::StopRotateRight);
+
+        EIC->BindAction(RotateLeftAction, ETriggerEvent::Started, this, &APlayerPawnController::StartRotateLeft);
+        EIC->BindAction(RotateLeftAction, ETriggerEvent::Completed, this, &APlayerPawnController::StopRotateLeft);
+
+        EIC->BindAction(RotateForwardAction, ETriggerEvent::Started, this, &APlayerPawnController::StartRotateForward);
+        EIC->BindAction(RotateForwardAction, ETriggerEvent::Completed, this, &APlayerPawnController::StopRotateForward);
+
+        EIC->BindAction(RotateBackwardAction, ETriggerEvent::Started, this, &APlayerPawnController::StartRotateBackward);
+        EIC->BindAction(RotateBackwardAction, ETriggerEvent::Completed, this, &APlayerPawnController::StopRotateBackward);
+
+        // Snap & Spin
+        EIC->BindAction(HorizontalSnapAction, ETriggerEvent::Started, this, &APlayerPawnController::SnapHorizontal);
+        EIC->BindAction(VerticalSnapAction, ETriggerEvent::Started, this, &APlayerPawnController::SnapVertical);
+        EIC->BindAction(ForwardSnapAction, ETriggerEvent::Started, this, &APlayerPawnController::SnapForward);
+
+        EIC->BindAction(SpinAction, ETriggerEvent::Started, this, &APlayerPawnController::StartSpin);
+        EIC->BindAction(SpinAction, ETriggerEvent::Completed, this, &APlayerPawnController::StopSpin);
+
+        EIC->BindAction(FireAction, ETriggerEvent::Started, this, &APlayerPawnController::FireObject);
     }
 }
 
-//Input methods
+// Movement input
 void APlayerPawnController::ForwardPressed(const FInputActionValue&) { MoveInput.X = 1.f; }
 void APlayerPawnController::ForwardReleased(const FInputActionValue&) { if (MoveInput.X > 0.f) MoveInput.X = 0.f; }
 void APlayerPawnController::BackwardPressed(const FInputActionValue&) { MoveInput.X = -1.f; }
@@ -137,7 +156,6 @@ void APlayerPawnController::Look(const FInputActionValue& Value)
 {
     FVector2D LookValue = Value.Get<FVector2D>();
     if (LookValue.IsNearlyZero()) return;
-
     float MouseSensitivity = 0.35f;
     AddActorLocalRotation(FRotator(0.f, LookValue.X * MouseSensitivity, 0.f));
     CameraPitch = FMath::Clamp(CameraPitch - LookValue.Y * MouseSensitivity, -85.f, 85.f);
@@ -155,19 +173,36 @@ void APlayerPawnController::Jump(const FInputActionValue&)
     }
 }
 
-void APlayerPawnController::GrabObject() { if (GravityGun) GravityGun->Grab(); }
-void APlayerPawnController::ReleaseObject() { if (GravityGun) GravityGun->Release(); }
-
 void APlayerPawnController::CheckGrounded()
 {
     if (!GetWorld()) return;
-
     FVector Start = Capsule->GetComponentLocation();
     FVector End = Start - FVector(0.f, 0.f, Capsule->GetScaledCapsuleHalfHeight() + 5.f);
-
     FHitResult Hit;
     FCollisionQueryParams Params;
     Params.AddIgnoredActor(this);
-
     bIsGrounded = GetWorld()->LineTraceSingleByChannel(Hit, Start, End, ECC_Visibility, Params);
 }
+
+#pragma region GravityGunMethods
+void APlayerPawnController::ToggleGrab() { if (GravityGun) GravityGun->ToggleGrab(); }
+void APlayerPawnController::SnapHorizontal() { if (GravityGun) GravityGun->SnapRotationToHorizontal(); }
+void APlayerPawnController::SnapVertical() { if (GravityGun) GravityGun->SnapRotationToVertical(); }
+void APlayerPawnController::SnapForward() { if (GravityGun) GravityGun->SnapRotationForward(); }
+void APlayerPawnController::StartSpin() { if (GravityGun) GravityGun->StartSpin(); }
+void APlayerPawnController::StopSpin() { if (GravityGun) GravityGun->StopSpin(); }
+void APlayerPawnController::FireObject() { if (GravityGun) GravityGun->FireObject(); }
+
+// Manual rotation 
+void APlayerPawnController::StartRotateRight() { if (GravityGun) GravityGun->bRotateYawRight = true; }
+void APlayerPawnController::StopRotateRight() { if (GravityGun) GravityGun->bRotateYawRight = false; }
+
+void APlayerPawnController::StartRotateLeft() { if (GravityGun) GravityGun->bRotateYawLeft = true; }
+void APlayerPawnController::StopRotateLeft() { if (GravityGun) GravityGun->bRotateYawLeft = false; }
+
+void APlayerPawnController::StartRotateForward() { if (GravityGun) GravityGun->bRotatePitchUp = true; }
+void APlayerPawnController::StopRotateForward() { if (GravityGun) GravityGun->bRotatePitchUp = false; }
+
+void APlayerPawnController::StartRotateBackward() { if (GravityGun) GravityGun->bRotatePitchDown = true; }
+void APlayerPawnController::StopRotateBackward() { if (GravityGun) GravityGun->bRotatePitchDown = false; }
+#pragma endregion

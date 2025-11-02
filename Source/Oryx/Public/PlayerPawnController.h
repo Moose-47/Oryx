@@ -51,15 +51,35 @@ protected:
     UInputAction* LookAction;
     UPROPERTY(EditAnywhere, Category = "Inputs")
     UInputAction* JumpAction;
-    UPROPERTY(EditAnywhere, Category = "Inputs")
-    UInputAction* GravityGrabAction;
 
+#pragma region Gravity Gun
     // Gravity Gun
     UPROPERTY(EditAnywhere, Category = "GravityGun")
     TSubclassOf<AGravityGun> GravityGunClass;
-
     UPROPERTY()
     AGravityGun* GravityGun;
+
+    UPROPERTY(EditAnywhere, Category = "GravityGunInputs")
+    UInputAction* GravityGrabAction;
+    UPROPERTY(EditAnywhere, Category = "GravityGunInputs")
+    UInputAction* RotateRightAction;
+    UPROPERTY(EditAnywhere, Category = "GravityGunInputs")
+    UInputAction* RotateLeftAction;
+    UPROPERTY(EditAnywhere, Category = "GravityGunInputs")
+    UInputAction* RotateForwardAction;
+    UPROPERTY(EditAnywhere, Category = "GravityGunInputs")
+    UInputAction* RotateBackwardAction;
+    UPROPERTY(EditAnywhere, Category = "GravityGunInputs")
+    UInputAction* HorizontalSnapAction;
+    UPROPERTY(EditAnywhere, Category = "GravityGunInputs")
+    UInputAction* VerticalSnapAction;
+    UPROPERTY(EditAnywhere, Category = "GravityGunInputs")
+    UInputAction* ForwardSnapAction;
+    UPROPERTY(EditAnywhere, Category = "GravityGunInputs")
+    UInputAction* SpinAction;
+    UPROPERTY(EditAnywhere, Category = "GravityGunInputs")
+    UInputAction* FireAction;
+#pragma endregion
 
     // Movement
     UPROPERTY(EditAnywhere, Category = "Movement")
@@ -98,8 +118,26 @@ protected:
     void LeftPressed(const FInputActionValue&);
     void LeftReleased(const FInputActionValue&);
 
-    void GrabObject();
-    void ReleaseObject();
-
     void CheckGrounded();
+
+#pragma region GravityGun
+    //Gravity gun input
+    void ToggleGrab();
+    void SnapHorizontal();
+    void SnapVertical();
+    void SnapForward();
+    void StartSpin();
+    void StopSpin();
+    void FireObject();
+
+    // Manual rotation booleans
+    void StartRotateRight();
+    void StopRotateRight();
+    void StartRotateLeft();
+    void StopRotateLeft();
+    void StartRotateForward();
+    void StopRotateForward();
+    void StartRotateBackward();
+    void StopRotateBackward();
+#pragma endregion
 };
