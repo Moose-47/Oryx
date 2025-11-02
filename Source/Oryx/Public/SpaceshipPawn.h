@@ -68,7 +68,7 @@ protected:
 	void OnBrake(const FInputActionValue& Value);
 	void OnLand(const FInputActionValue& Value);
 #pragma endregion
-
+  
 protected:
 #pragma region Ship mesh and Thruster Components
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Ship")
