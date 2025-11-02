@@ -13,30 +13,34 @@ APlayerPawnController::APlayerPawnController()
 {
     PrimaryActorTick.bCanEverTick = true;
 
+    //Setup capsule (physics)
     Capsule = CreateDefaultSubobject<UCapsuleComponent>(TEXT("Capsule"));
     Capsule->InitCapsuleSize(42.f, 88.f);
-    Capsule->SetSimulatePhysics(true);
-    Capsule->SetEnableGravity(false);
-    Capsule->SetLinearDamping(5.f);
-    Capsule->SetAngularDamping(1.f);
+    Capsule->SetSimulatePhysics(true); //Enabled physics simulation
+    Capsule->SetEnableGravity(false); //Disabling gravity, handling it manually
+    Capsule->SetLinearDamping(5.f); //Damping horizontal velocity for smooth movement
+    Capsule->SetAngularDamping(1000000.f); //Prevent unwanted rotations
     Capsule->SetCollisionProfileName("PhysicsActor");
     RootComponent = Capsule;
 
+    //Setup mesh
     Mesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("Mesh"));
     Mesh->SetupAttachment(Capsule);
     Mesh->SetRelativeLocation(FVector(0.f, 0.f, -88.f));
     Mesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 
+    //Setup camera
     Camera = CreateDefaultSubobject<UCameraComponent>(TEXT("Camera"));
     Camera->SetupAttachment(Capsule);
     Camera->SetRelativeLocation(FVector(0.f, 0.f, 64.f));
-    Camera->bUsePawnControlRotation = false;
+    Camera->bUsePawnControlRotation = false; //Manually handling camera rotation
 }
 
 void APlayerPawnController::BeginPlay()
 {
     Super::BeginPlay();
 
+    //Add input mapping context
     if (APlayerController* PC = Cast<APlayerController>(GetController()))
     {
         if (UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(PC->GetLocalPlayer()))
@@ -46,6 +50,7 @@ void APlayerPawnController::BeginPlay()
         }
     }
 
+    //Spawning gravity gun
     if (GravityGunClass)
     {
         FActorSpawnParameters SpawnParams;
@@ -62,6 +67,7 @@ void APlayerPawnController::Tick(float DeltaTime)
     Super::Tick(DeltaTime);
     CheckGrounded();
 
+    //Apply gravity
     FVector Velocity = Capsule->GetPhysicsLinearVelocity();
     if (!bIsGrounded)
     {
@@ -70,25 +76,29 @@ void APlayerPawnController::Tick(float DeltaTime)
     }
     else if (Velocity.Z < 0.f)
     {
-        Velocity.Z = 0.f;
+        Velocity.Z = 0.f; //Stop downward velocity when grounded to prevent bouncing
     }
 
+    //Compute movement direction relative to camera
     FVector Forward = Camera->GetForwardVector();
     FVector Right = Camera->GetRightVector();
-    Forward.Z = 0.f; Forward.Normalize();
+    Forward.Z = 0.f; Forward.Normalize(); //Flatten movement on XY plane
     Right.Z = 0.f; Right.Normalize();
 
     FVector2D DesiredDir = MoveInput;
     if (DesiredDir.SizeSquared() > 1.f) DesiredDir.Normalize();
 
+    //Smooth acceleration
     FVector2D TargetVel = DesiredDir * MoveSpeed;
     FVector2D DeltaVel = TargetVel - CurrentHorizontalVelocity;
     FVector2D Accel = DeltaVel.GetClampedToMaxSize(MoveAcceleration * DeltaTime);
     CurrentHorizontalVelocity += Accel;
 
+    //Convert 2D velocity to world 3D velocity
     Velocity.X = Forward.X * CurrentHorizontalVelocity.X + Right.X * CurrentHorizontalVelocity.Y;
     Velocity.Y = Forward.Y * CurrentHorizontalVelocity.X + Right.Y * CurrentHorizontalVelocity.Y;
-
+     
+    //Apply velocity to capsule
     Capsule->SetPhysicsLinearVelocity(Velocity);
 }
 
@@ -97,7 +107,8 @@ void APlayerPawnController::SetupPlayerInputComponent(UInputComponent* PlayerInp
     Super::SetupPlayerInputComponent(PlayerInputComponent);
     if (UEnhancedInputComponent* EIC = Cast<UEnhancedInputComponent>(PlayerInputComponent))
     {
-        // Movement
+#pragma region Player Movement Inputs
+        //Binding Movement actions
         EIC->BindAction(ForwardAction, ETriggerEvent::Started, this, &APlayerPawnController::ForwardPressed);
         EIC->BindAction(ForwardAction, ETriggerEvent::Completed, this, &APlayerPawnController::ForwardReleased);
 
@@ -110,14 +121,16 @@ void APlayerPawnController::SetupPlayerInputComponent(UInputComponent* PlayerInp
         EIC->BindAction(RightAction, ETriggerEvent::Started, this, &APlayerPawnController::RightPressed);
         EIC->BindAction(RightAction, ETriggerEvent::Completed, this, &APlayerPawnController::RightReleased);
 
-        // Look & Jump
+        //Binding Look & Jump actions
         EIC->BindAction(LookAction, ETriggerEvent::Triggered, this, &APlayerPawnController::Look);
         EIC->BindAction(JumpAction, ETriggerEvent::Started, this, &APlayerPawnController::Jump);
-
-        //Gravity Gun
+#pragma endregion
+        
+#pragma region Gravity Gun Inputs
+        //gravity gun grab/release action
         EIC->BindAction(GravityGrabAction, ETriggerEvent::Started, this, &APlayerPawnController::ToggleGrab);
 
-        // Rotation 
+        //Gravity gun rotation actions
         EIC->BindAction(RotateRightAction, ETriggerEvent::Started, this, &APlayerPawnController::StartRotateRight);
         EIC->BindAction(RotateRightAction, ETriggerEvent::Completed, this, &APlayerPawnController::StopRotateRight);
 
@@ -130,7 +143,7 @@ void APlayerPawnController::SetupPlayerInputComponent(UInputComponent* PlayerInp
         EIC->BindAction(RotateBackwardAction, ETriggerEvent::Started, this, &APlayerPawnController::StartRotateBackward);
         EIC->BindAction(RotateBackwardAction, ETriggerEvent::Completed, this, &APlayerPawnController::StopRotateBackward);
 
-        // Snap & Spin
+        //Gravity gun Snap & spin actions
         EIC->BindAction(HorizontalSnapAction, ETriggerEvent::Started, this, &APlayerPawnController::SnapHorizontal);
         EIC->BindAction(VerticalSnapAction, ETriggerEvent::Started, this, &APlayerPawnController::SnapVertical);
         EIC->BindAction(ForwardSnapAction, ETriggerEvent::Started, this, &APlayerPawnController::SnapForward);
@@ -138,11 +151,13 @@ void APlayerPawnController::SetupPlayerInputComponent(UInputComponent* PlayerInp
         EIC->BindAction(SpinAction, ETriggerEvent::Started, this, &APlayerPawnController::StartSpin);
         EIC->BindAction(SpinAction, ETriggerEvent::Completed, this, &APlayerPawnController::StopSpin);
 
+        //gravity gun fire action
         EIC->BindAction(FireAction, ETriggerEvent::Started, this, &APlayerPawnController::FireObject);
+#pragma endregion
     }
 }
 
-// Movement input
+//Movement input handlers
 void APlayerPawnController::ForwardPressed(const FInputActionValue&) { MoveInput.X = 1.f; }
 void APlayerPawnController::ForwardReleased(const FInputActionValue&) { if (MoveInput.X > 0.f) MoveInput.X = 0.f; }
 void APlayerPawnController::BackwardPressed(const FInputActionValue&) { MoveInput.X = -1.f; }
@@ -157,7 +172,11 @@ void APlayerPawnController::Look(const FInputActionValue& Value)
     FVector2D LookValue = Value.Get<FVector2D>();
     if (LookValue.IsNearlyZero()) return;
     float MouseSensitivity = 0.35f;
+
+    //Yaw rotates the whole pawn
     AddActorLocalRotation(FRotator(0.f, LookValue.X * MouseSensitivity, 0.f));
+
+    //Pitch rotates camera only
     CameraPitch = FMath::Clamp(CameraPitch - LookValue.Y * MouseSensitivity, -85.f, 85.f);
     Camera->SetRelativeRotation(FRotator(CameraPitch, 0.f, 0.f));
 }
@@ -167,12 +186,13 @@ void APlayerPawnController::Jump(const FInputActionValue&)
     if (bIsGrounded)
     {
         FVector Velocity = Capsule->GetPhysicsLinearVelocity();
-        Velocity.Z = JumpVelocity;
+        Velocity.Z = JumpVelocity; //Add upward velocity ensuring jump height is always the same
         Capsule->SetPhysicsLinearVelocity(Velocity);
         bIsGrounded = false;
     }
 }
 
+//Check if player is grounded using line trace
 void APlayerPawnController::CheckGrounded()
 {
     if (!GetWorld()) return;
@@ -193,7 +213,7 @@ void APlayerPawnController::StartSpin() { if (GravityGun) GravityGun->StartSpin(
 void APlayerPawnController::StopSpin() { if (GravityGun) GravityGun->StopSpin(); }
 void APlayerPawnController::FireObject() { if (GravityGun) GravityGun->FireObject(); }
 
-// Manual rotation 
+//Manual rotation 
 void APlayerPawnController::StartRotateRight() { if (GravityGun) GravityGun->bRotateYawRight = true; }
 void APlayerPawnController::StopRotateRight() { if (GravityGun) GravityGun->bRotateYawRight = false; }
 

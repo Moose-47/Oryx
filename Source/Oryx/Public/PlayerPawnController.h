@@ -25,7 +25,7 @@ protected:
     virtual void Tick(float DeltaTime) override;
     virtual void SetupPlayerInputComponent(UInputComponent* PlayerInputComponent) override;
 
-    // Components
+#pragma region Components
     UPROPERTY(VisibleAnywhere)
     UCapsuleComponent* Capsule;
 
@@ -34,8 +34,9 @@ protected:
 
     UPROPERTY(VisibleAnywhere)
     UStaticMeshComponent* Mesh;
+#pragma endregion
 
-    // Input
+#pragma region Player Inputs
     UPROPERTY(EditAnywhere)
     UInputMappingContext* MappingContext;
 
@@ -51,6 +52,7 @@ protected:
     UInputAction* LookAction;
     UPROPERTY(EditAnywhere, Category = "Inputs")
     UInputAction* JumpAction;
+#pragma endregion
 
 #pragma region Gravity Gun
     // Gravity Gun
@@ -81,7 +83,7 @@ protected:
     UInputAction* FireAction;
 #pragma endregion
 
-    // Movement
+#pragma region Movement Variables
     UPROPERTY(EditAnywhere, Category = "Movement")
     float MoveSpeed = 600.f;
 
@@ -98,6 +100,8 @@ protected:
     float TerminalVelocity = -1200.f;
 
     UPROPERTY(VisibleAnywhere, Category = "Movement")
+#pragma endregion
+
     bool bIsGrounded = true;
 
     FVector2D MoveInput = FVector2D::ZeroVector;
@@ -105,7 +109,7 @@ protected:
 
     float CameraPitch = 0.f;
 
-    // Functions
+#pragma region Player Functions
     void Look(const FInputActionValue& Value);
     void Jump(const FInputActionValue& Value);
 
@@ -119,24 +123,31 @@ protected:
     void LeftReleased(const FInputActionValue&);
 
     void CheckGrounded();
+#pragma endregion
 
-#pragma region GravityGun
+
+#pragma region Gravity Gun Functions
     //Gravity gun input
     void ToggleGrab();
+
     void SnapHorizontal();
     void SnapVertical();
     void SnapForward();
+
     void StartSpin();
     void StopSpin();
+
     void FireObject();
 
-    // Manual rotation booleans
     void StartRotateRight();
     void StopRotateRight();
+
     void StartRotateLeft();
     void StopRotateLeft();
+
     void StartRotateForward();
     void StopRotateForward();
+
     void StartRotateBackward();
     void StopRotateBackward();
 #pragma endregion

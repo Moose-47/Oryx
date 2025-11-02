@@ -8,15 +8,20 @@ AGravityGun::AGravityGun()
 {
     PrimaryActorTick.bCanEverTick = true;
 
+    //Gun Mesh
     GunMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("GunMesh"));
     RootComponent = GunMesh;
 
+    //Physics handle
     PhysicsHandle = CreateDefaultSubobject<UPhysicsHandleComponent>(TEXT("PhysicsHandle"));
+    //PhysicsHandle allows for smooth object movement using physics
 }
 
 void AGravityGun::BeginPlay()
 {
     Super::BeginPlay();
+
+    //Initalize the guns relative position and rotation
     GunMesh->SetRelativeLocation(GunOffset);
     GunMesh->SetRelativeRotation(GunRotation);
 }
@@ -34,23 +39,26 @@ void AGravityGun::Tick(float DeltaTime)
     //Compute hold location in front of player
     FVector HoldLocation = CameraComp->GetComponentLocation() + CameraComp->GetForwardVector() * HoldDistance;
 
-    //Get current rotation as quaternion
+    //current rotation sotred as quaternion for smooth rotation
     FQuat CurrentQuat = HeldTargetRotation.Quaternion();
 
-    //Camera-relative axes
+    //Camera-relative axes for rotation
     FVector Forward = CameraComp->GetForwardVector(); //For spinning
     FVector Right = CameraComp->GetRightVector();     //For pitch rotation
     FVector Up = CameraComp->GetUpVector();           //For yaw rotation
 
-    //Spin (always like a fan blade in front of player)
+    //Spin
     if (bSpinning)
     {
+        //Interpolate spin speed towards MaxSpinSpeed
         CurrentSpinSpeed = FMath::FInterpTo(CurrentSpinSpeed, MaxSpinSpeed, DeltaTime, SpinAcceleration);
+
+        //Rotate around forward axis
         FQuat SpinDelta = FQuat(Forward, FMath::DegreesToRadians(CurrentSpinSpeed * DeltaTime));
         CurrentQuat = SpinDelta * CurrentQuat;
     }
 
-    //Manual rotation (player-relative)
+    //Manual rotation
     if (bRotateYawRight || bRotateYawLeft)
     {
         float YawDir = bRotateYawRight ? 1.f : -1.f;
@@ -67,7 +75,7 @@ void AGravityGun::Tick(float DeltaTime)
         bSnapping = false;
     }
 
-    //Snap rotation (relative to camera)
+    //Snap rotation
     if (bSnapping)
     {
         FQuat TargetQuat = SnapTargetRotation.Quaternion();
@@ -81,6 +89,7 @@ void AGravityGun::Tick(float DeltaTime)
     HeldTargetRotation.Normalize();
 
     //Apply rotation and position to physics handle
+    //PhysicsHandle moves the held object smoothly via physics
     PhysicsHandle->SetTargetLocationAndRotation(HoldLocation, HeldTargetRotation);
 }
 
@@ -106,6 +115,7 @@ void AGravityGun::Grab()
     Params.AddIgnoredActor(this);
     Params.AddIgnoredActor(GetOwner());
 
+    //Line trace to find object in front
     if (GetWorld()->LineTraceSingleByChannel(Hit, Start, End, ECC_PhysicsBody, Params))
     {
         UPrimitiveComponent* HitComp = Hit.GetComponent();
@@ -114,6 +124,7 @@ void AGravityGun::Grab()
             HeldComponent = HitComp;
             FVector ComponentCenter = HitComp->Bounds.Origin;
 
+            //grab the object at its center with physics handle
             PhysicsHandle->GrabComponentAtLocationWithRotation(
                 HeldComponent,
                 NAME_None,
@@ -121,6 +132,7 @@ void AGravityGun::Grab()
                 HeldComponent->GetComponentRotation()
             );
 
+            //reduce damping while holding for smooth movement
             HeldTargetRotation = HeldComponent->GetComponentRotation();
             HeldComponent->SetLinearDamping(1.f);
             HeldComponent->SetAngularDamping(1.f);
@@ -184,6 +196,7 @@ void AGravityGun::FireObject()
     if (!HeldComponent) return;
     UPrimitiveComponent* Prim = HeldComponent;
     FVector Forward = GetOwner()->FindComponentByClass<UCameraComponent>()->GetForwardVector();
-    Release();
-    Prim->AddImpulse(Forward * FireForce, NAME_None, true);
+
+    Release(); //Let go before applying physics impulse
+    Prim->AddImpulse(Forward * FireForce, NAME_None, true); //Add impulse to simulate shooting
 }
