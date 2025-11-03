@@ -10,6 +10,7 @@
 #include "Components/StaticMeshComponent.h"		//To define and modify the ship's static mesh.
 #include "Components/SceneComponent.h"			//For scene components (thruster attach points).
 #include "LandingPad.h"							//For referencing landing pad.
+#include "PlayerPawnController.h"
 #pragma endregion
 
 //Constructor - Sets up component heirarchy, physics, and vfx
@@ -171,8 +172,20 @@ void ASpaceshipPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputCompo
 void ASpaceshipPawn::OnForwardThrust(const FInputActionValue& Value) { bForwardThrust = Value.Get<bool>(); }
 void ASpaceshipPawn::OnLeftThrust(const FInputActionValue& Value) { bLeftThrust = Value.Get<bool>(); }
 void ASpaceshipPawn::OnRightThrust(const FInputActionValue& Value) { bRightThrust = Value.Get<bool>(); }
-void ASpaceshipPawn::OnAllThrusters(const FInputActionValue& Value) { bAllThrusters = Value.Get<bool>(); }
 void ASpaceshipPawn::OnBrake(const FInputActionValue& Value) { bBrake = Value.Get<bool>(); }
+
+void ASpaceshipPawn::OnAllThrusters(const FInputActionValue& Value)
+{
+	bool bPressed = Value.Get<bool>();
+
+	if (LandingStage == ELandingStage::Landed && bPressed)
+	{
+		StartTakeoff();
+		return;
+	}
+
+	bAllThrusters = Value.Get<bool>();
+}
 #pragma endregion
 
 //Limists mouse range for steering
@@ -206,7 +219,7 @@ void ASpaceshipPawn::RestrictMouseToCircle()
 //Smoothly turns ship towards mouse offset
 void ASpaceshipPawn::UpdateRotation(float DeltaTime)
 {
-	if (!ShipMesh) return;
+	if (!ShipMesh || LandingStage == ELandingStage::Landed) return;
 
 	//MouseOffset is normalized between [-1, 1] in both X and Y.
 	//X controls left/right, Y controls up/down — calculated earlier in RestrictMouseToCircle().
@@ -260,7 +273,7 @@ void ASpaceshipPawn::UpdateRotation(float DeltaTime)
 //Applies forces and activaes FX as needed
 void ASpaceshipPawn::ApplyThrusters(float DeltaTime)
 {
-	if (!ShipMesh) return;
+	if (!ShipMesh || LandingStage == ELandingStage::Landed) return;
 
 	//Lambda helper for applying forces at thruster locations
 	auto ApplyForceAt = [&](USceneComponent* Thruster, float Force)
@@ -337,7 +350,11 @@ void ASpaceshipPawn::ApplyThrusters(float DeltaTime)
 void ASpaceshipPawn::OnLand(const FInputActionValue& Value)
 {
 	if (bIsLanding) return;
-
+	if (LandingStage == ELandingStage::Landed)
+	{
+		OnExitShip();
+		return;
+	}
 	if (OverlappingLandingPad)
 	{
 		StartLanding(OverlappingLandingPad);
@@ -441,67 +458,54 @@ void ASpaceshipPawn::LandingSequence(float DeltaTime)
 
 	case ELandingStage::AlignRotation:
 	{
-		//Get pad yaw rotation
+		//Get current ship yaw and pad yaw
 		float PadYaw = TargetLandingPad->GetActorRotation().Yaw;
+		float ShipYaw = GetActorRotation().Yaw;
 
-		//Normalize to 0–360 range
+		//Normalize angles to 0-360
 		auto Normalize360 = [](float Angle)
 			{
 				Angle = FMath::Fmod(Angle, 360.f);
-				if (Angle < 0.f)
-					Angle += 360.f;
+				if (Angle < 0.f) Angle += 360.f;
 				return Angle;
 			};
 
-		//Normalize both the pads yaw and our ships yaw to a clean 0-360 range
-		float ShipYaw = Normalize360(CurrentRot.Yaw);
 		PadYaw = Normalize360(PadYaw);
+		ShipYaw = Normalize360(ShipYaw);
 
-		//The landing pad will only ever be flat in 1 of 4 angles(0, 90, 180, or 270 degrees)
-		//They are then grouped into 2 families (X-Axis facing -> 0 or 180) (Y-Axis facing -> 90 or 270)
-		//Group is decided based on the pads facing
-		TArray<float> PossibleYaws;
-		if (FMath::Abs(FRotator::NormalizeAxis(PadYaw - 0.f)) < 1.f ||
-			FMath::Abs(FRotator::NormalizeAxis(PadYaw - 180.f)) < 1.f)
+		//Compute the smallest difference between ship and pad
+		float DeltaYaw = FRotator::NormalizeAxis(PadYaw - ShipYaw);
+
+		float TargetYaw;
+
+		if (FMath::Abs(DeltaYaw) <= 90.f)
 		{
-			//Pad is facing along X-axis, so valid target yaws are 0 or 180
-			PossibleYaws = { 0.f, 180.f };
+			TargetYaw = PadYaw; //Match pad yaw
 		}
 		else
 		{
-			//Pad is facing along Y-axis, so valid target yaws are 90 or 270
-			PossibleYaws = { 90.f, 270.f };
+			TargetYaw = Normalize360(PadYaw + 180.f); //Opposite side
 		}
 
-		//Find which of those two angles is closest to our current ship yaw
-		float ClosestYaw = PossibleYaws[0]; //Start with the first option
-		float SmallestDiff = 9999.f; //A large number so the first real difference will replace it
-		for (float YawOption : PossibleYaws) //Loop through each possible yaw in the group
-		{
-			float Diff = FMath::Abs(FRotator::NormalizeAxis(YawOption - ShipYaw));
-			if (Diff < SmallestDiff)
-			{
-				//Found the closer option, update our target
-				SmallestDiff = Diff;
-				ClosestYaw = YawOption;
-			}
-		}
-
-		//Create smooth rotation
-		TargetRot = FRotator(0.f, ClosestYaw, 0.f); //Only rotate around yaw, keep pitch/roll at 0
-
-		//RinterpTo smoothly interpolates between the ships current rotation and its target rotation over time
+		// Smoothly interpolate rotation toward target
+		CurrentRot = GetActorRotation();
+		TargetRot = FRotator(0.f, TargetYaw, 0.f);
 		NewRot = FMath::RInterpTo(CurrentRot, TargetRot, DeltaTime, LandingRotateSpeed);
-		SetActorRotation(NewRot); //Apply the new smoothed rotation to the ship
+		SetActorRotation(NewRot);
 
-		//Small drift motion toward pad
-		FVector DriftDirection = (PadLocation - ShipLocation).GetSafeNormal();
-		FVector NewLocation = ShipLocation + DriftDirection * (LandingMoveSpeed * 0.2f) * DeltaTime;
+		//Horizontal drift toward pad (ignore Z)
+		FVector DriftDirection = TargetLandingPad->GetActorLocation() - GetActorLocation();
+		DriftDirection.Z = 0.f; //remove vertical component
+		DriftDirection.Normalize();
+
+		FVector NewLocation = GetActorLocation() + DriftDirection * (LandingMoveSpeed * 0.2f) * DeltaTime;
 		SetActorLocation(NewLocation);
 
-		//Once aligned, move to next stage
-		//NormalizeAxis ensures that 359 degrees and 0 degrees are treated as a 1 degree difference and not 359
-		if (FMath::Abs(FRotator::NormalizeAxis(NewRot.Yaw - TargetRot.Yaw)) < 1.f)
+		float RotationTolerance = 1.f;
+		//Once yaw is aligned within tolerance, move to descend
+		if (FMath::Abs(FRotator::NormalizeAxis(NewRot.Yaw - TargetRot.Yaw)) < RotationTolerance &&
+			FMath::Abs(FRotator::NormalizeAxis(NewRot.Pitch - TargetRot.Pitch)) < RotationTolerance &&
+			FMath::Abs(FRotator::NormalizeAxis(NewRot.Roll - TargetRot.Roll)) < RotationTolerance)
 		{
 			LandingStage = ELandingStage::Descend;
 		}
@@ -522,14 +526,16 @@ void ASpaceshipPawn::LandingSequence(float DeltaTime)
 		if (ShipLocation.Z <= PadLocation.Z + 300.f)
 		{
 
-			LandingStage = ELandingStage::Finished;
+			LandingStage = ELandingStage::Landed;
 			bIsLanding = false; //Landing complete
+
+			LockShipOnPad(true);
 
 			//Ensures all VFX used during landing sequence are deactivated
 			MainThrusterFX->Deactivate();
 			LeftBrakeThrusterFX->Deactivate();
 			RightBrakeThrusterFX->Deactivate();
-
+			
 			if (GEngine)
 			{
 				GEngine->AddOnScreenDebugMessage(-1, 3.f, FColor::Green, TEXT("Landing Complete"));
@@ -543,4 +549,136 @@ void ASpaceshipPawn::LandingSequence(float DeltaTime)
 	}
 
 	return;
+}
+
+// Lock or unlock ship physics so it stays on pad when landed
+void ASpaceshipPawn::LockShipOnPad(bool bLock)
+{
+	if (!ShipMesh) return;
+
+	if (bLock)
+	{
+		// Stop physics and lock motion
+		ShipMesh->SetSimulatePhysics(false);   // Turns the ship into a static object
+		ShipMesh->SetEnableGravity(false);     // Gravity shouldn't move it
+
+		// Optional: ensure no residual velocities
+		ShipMesh->SetPhysicsLinearVelocity(FVector::ZeroVector);
+		ShipMesh->SetPhysicsAngularVelocityInDegrees(FVector::ZeroVector);
+
+		// Lock constraints for extra safety
+		ShipMesh->SetConstraintMode(EDOFMode::SixDOF);
+		ShipMesh->BodyInstance.bLockXTranslation = true;
+		ShipMesh->BodyInstance.bLockYTranslation = true;
+		ShipMesh->BodyInstance.bLockZTranslation = true;
+		ShipMesh->BodyInstance.bLockXRotation = true;
+		ShipMesh->BodyInstance.bLockYRotation = true;
+		ShipMesh->BodyInstance.bLockZRotation = true;
+
+		// Sleep rigid body to prevent any drift
+		ShipMesh->PutRigidBodyToSleep();
+	}
+	else
+	{
+		// Re-enable physics so ship can move again
+		ShipMesh->SetSimulatePhysics(true);
+		ShipMesh->SetEnableGravity(false); // keep gravity off unless you want it on
+
+		// Unlock constraints
+		ShipMesh->BodyInstance.bLockXTranslation = false;
+		ShipMesh->BodyInstance.bLockYTranslation = false;
+		ShipMesh->BodyInstance.bLockZTranslation = false;
+		ShipMesh->BodyInstance.bLockXRotation = false;
+		ShipMesh->BodyInstance.bLockYRotation = false;
+		ShipMesh->BodyInstance.bLockZRotation = false;
+		ShipMesh->SetConstraintMode(EDOFMode::Default);
+
+		// Wake up physics
+		ShipMesh->WakeRigidBody();
+	}
+}
+
+void ASpaceshipPawn::StartTakeoff()
+{
+	// only allow takeoff from landed state
+	if (LandingStage != ELandingStage::Landed) return;
+
+	LockShipOnPad(false);
+
+	// Give a strong upward impulse to break free from pad
+	if (ShipMesh)
+	{
+		const FVector UpImpulse = FVector(0.f, 0.f, 25000.f);
+		ShipMesh->AddImpulse(UpImpulse);
+	}
+
+	//Reset landing state so normal controls resume
+	LandingStage = ELandingStage::None;
+	bIsLanding = false;
+
+	if (GEngine)
+	{
+		GEngine->AddOnScreenDebugMessage(-1, 2.f, FColor::Cyan, TEXT("Takeoff initiated"));
+	}
+}
+
+void ASpaceshipPawn::OnExitShip()
+{
+	APlayerController* PC = Cast<APlayerController>(GetController());
+	if (!PC || !PlayerPawnClass) return;
+
+	UWorld* World = GetWorld();
+	if (!World) return;
+
+	//Safe spawn location beside the ship
+	const FVector SpawnLocation = GetActorLocation() + GetActorRightVector() * 500.f;
+	const FRotator SpawnRotation = GetActorRotation();
+
+	//Spawn player pawn
+	FActorSpawnParameters SpawnParams;
+	SpawnParams.Owner = this;
+	SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
+
+	APawn* NewPlayerPawn = World->SpawnActor<APawn>(PlayerPawnClass, SpawnLocation, SpawnRotation, SpawnParams);
+	if (!NewPlayerPawn) return;
+
+	//Transfer control
+	PC->UnPossess();
+	PC->Possess(NewPlayerPawn);
+
+	//re-enable mouse locking
+	PC->bShowMouseCursor = false;
+	FInputModeGameOnly InputMode;
+	PC->SetInputMode(InputMode);
+}
+
+void ASpaceshipPawn::TryBoard(APlayerPawnController* PlayerPawn)
+{
+	if (!PlayerPawn) return;
+
+	APlayerController* PC = Cast<APlayerController>(PlayerPawn->GetController());
+	if (!PC) return;
+
+	PC->UnPossess();
+	PC->Possess(this);
+
+	if (ULocalPlayer* LP = PC->GetLocalPlayer())
+	{
+		if (UEnhancedInputLocalPlayerSubsystem* Subsystem = LP->GetSubsystem<UEnhancedInputLocalPlayerSubsystem>())
+		{
+			if (ShipMappingContext)
+			{
+				Subsystem->ClearAllMappings();
+				Subsystem->AddMappingContext(ShipMappingContext, 0);
+			}
+		}
+	}
+
+	PC->bShowMouseCursor = true; //Displays the cursore for the mouse-based direction input
+
+	//Allow mouse to move freely on screen
+	FInputModeGameAndUI InputMode;
+	InputMode.SetHideCursorDuringCapture(false);
+	InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+	PC->SetInputMode(InputMode);
 }

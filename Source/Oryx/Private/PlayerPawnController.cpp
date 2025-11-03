@@ -1,13 +1,22 @@
 #include "PlayerPawnController.h"
+// Components
 #include "Camera/CameraComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/StaticMeshComponent.h"
+// Input
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "InputAction.h"
+// Core gameplay
 #include "GameFramework/PlayerController.h"
+#include "GameFramework/Actor.h"
 #include "Engine/World.h"
+#include "Engine/EngineTypes.h" //For ECC_Pawn
+#include "Kismet/KismetSystemLibrary.h"
+#include "Kismet/GameplayStatics.h"
+// Custom classes
 #include "GravityGun.h"
+#include "SpaceshipPawn.h"
 
 APlayerPawnController::APlayerPawnController()
 {
@@ -36,9 +45,9 @@ APlayerPawnController::APlayerPawnController()
     Camera->bUsePawnControlRotation = false; //Manually handling camera rotation
 }
 
-void APlayerPawnController::BeginPlay()
+void APlayerPawnController::PossessedBy(AController* NewController)
 {
-    Super::BeginPlay();
+    Super::PossessedBy(NewController);
 
     //Add input mapping context
     if (APlayerController* PC = Cast<APlayerController>(GetController()))
@@ -49,7 +58,6 @@ void APlayerPawnController::BeginPlay()
                 Subsystem->AddMappingContext(MappingContext, 0);
         }
     }
-
     //Spawning gravity gun
     if (GravityGunClass)
     {
@@ -124,6 +132,9 @@ void APlayerPawnController::SetupPlayerInputComponent(UInputComponent* PlayerInp
         //Binding Look & Jump actions
         EIC->BindAction(LookAction, ETriggerEvent::Triggered, this, &APlayerPawnController::Look);
         EIC->BindAction(JumpAction, ETriggerEvent::Started, this, &APlayerPawnController::Jump);
+
+        //binding board ship action
+        EIC->BindAction(BoardShipAction, ETriggerEvent::Triggered, this, &APlayerPawnController::TryBoardShip);
 #pragma endregion
         
 #pragma region Gravity Gun Inputs
@@ -226,3 +237,56 @@ void APlayerPawnController::StopRotateForward() { if (GravityGun) GravityGun->bR
 void APlayerPawnController::StartRotateBackward() { if (GravityGun) GravityGun->bRotatePitchDown = true; }
 void APlayerPawnController::StopRotateBackward() { if (GravityGun) GravityGun->bRotatePitchDown = false; }
 #pragma endregion
+
+void APlayerPawnController::FindShip()
+{
+    NearbyShip = nullptr;
+    if (!GetWorld()) return;
+
+    TArray<AActor*> OverlappingActors;
+    TArray<TEnumAsByte<EObjectTypeQuery>> ObjectTypes;
+    ObjectTypes.Add(UEngineTypes::ConvertToObjectType(ECC_Pawn));
+
+    UKismetSystemLibrary::SphereOverlapActors(
+        GetWorld(),
+        GetActorLocation(),
+        BoardRadius,
+        TArray<TEnumAsByte<EObjectTypeQuery>>(),
+        ASpaceshipPawn::StaticClass(),
+        TArray<AActor*>(),
+        OverlappingActors
+    );
+
+    for (AActor* Actor : OverlappingActors)
+    {
+        if (ASpaceshipPawn* Ship = Cast<ASpaceshipPawn>(Actor))
+        {
+            NearbyShip = Ship;
+            return;
+        }
+    }
+}
+
+void APlayerPawnController::TryBoardShip()
+{
+    FindShip();
+
+    if (!NearbyShip) return;
+
+    if (GravityGun)
+    {
+        TArray<AActor*> FoundActors;
+        UGameplayStatics::GetAllActorsOfClass(GetWorld(), AActor::StaticClass(), FoundActors);
+
+        for (AActor* Actor : FoundActors)
+        {
+            if (Actor && Actor->GetName().Contains("BP_GravityGun"))
+            {
+                Actor->Destroy();
+            }
+        }
+    }
+
+    NearbyShip->TryBoard(this);
+    this->Destroy();
+}

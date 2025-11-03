@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Pawn.h"
 #include "InputActionValue.h"
+#include "SpaceshipPawn.h"
 #include "PlayerPawnController.generated.h"
 
 class UCapsuleComponent;
@@ -11,6 +12,7 @@ class UStaticMeshComponent;
 class UInputMappingContext;
 class UInputAction;
 class AGravityGun;
+class ASpaceshipPawn;
 
 UCLASS()
 class ORYX_API APlayerPawnController : public APawn
@@ -21,7 +23,7 @@ public:
     APlayerPawnController();
 
 protected:
-    virtual void BeginPlay() override;
+    virtual void PossessedBy(AController* NewController) override;
     virtual void Tick(float DeltaTime) override;
     virtual void SetupPlayerInputComponent(UInputComponent* PlayerInputComponent) override;
 
@@ -52,12 +54,15 @@ protected:
     UInputAction* LookAction;
     UPROPERTY(EditAnywhere, Category = "Inputs")
     UInputAction* JumpAction;
+    UPROPERTY(EditAnywhere, Category = "Input")
+    UInputAction* BoardShipAction;
 #pragma endregion
 
 #pragma region Gravity Gun
     // Gravity Gun
     UPROPERTY(EditAnywhere, Category = "GravityGun")
     TSubclassOf<AGravityGun> GravityGunClass;
+
     UPROPERTY()
     AGravityGun* GravityGun;
 
@@ -125,7 +130,6 @@ protected:
     void CheckGrounded();
 #pragma endregion
 
-
 #pragma region Gravity Gun Functions
     //Gravity gun input
     void ToggleGrab();
@@ -151,4 +155,18 @@ protected:
     void StartRotateBackward();
     void StopRotateBackward();
 #pragma endregion
+
+#pragma region Ship
+    UPROPERTY(EditAnywhere)
+    float BoardRadius = 1000.f;
+
+    UPROPERTY()
+    ASpaceshipPawn* NearbyShip = nullptr;
+
+    void FindShip();
+
+    void TryBoardShip();
+#pragma endregion
+
+    
 };

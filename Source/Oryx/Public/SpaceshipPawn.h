@@ -26,7 +26,7 @@ enum class ELandingStage : uint8 //uint8 to use 1 byte in memory
 	ApplyBrakes,        // Activate brakes VFX
 	AlignRotation,      // Match pad rotation
 	Descend,            // Descend vertically
-	Finished
+	Landed
 };
 
 UCLASS()
@@ -58,6 +58,10 @@ protected:
 
 	//Function handles the actual landing functionality
 	void LandingSequence(float DeltaTime);
+
+	void LockShipOnPad(bool bLock);
+	void StartTakeoff();
+	void OnExitShip();
 #pragma endregion
 
 #pragma region Input Action Callbacks
@@ -67,6 +71,7 @@ protected:
 	void OnAllThrusters(const FInputActionValue& Value);
 	void OnBrake(const FInputActionValue& Value);
 	void OnLand(const FInputActionValue& Value);
+	
 #pragma endregion
   
 protected:
@@ -193,4 +198,10 @@ protected:
 public:
 	ALandingPad* OverlappingLandingPad = nullptr;
 #pragma endregion
+
+	UPROPERTY(EditAnywhere, Category = "Ship")
+	TSubclassOf<APawn> PlayerPawnClass;
+
+	UFUNCTION()
+	void TryBoard(APlayerPawnController* PlayerPawn);
 };
