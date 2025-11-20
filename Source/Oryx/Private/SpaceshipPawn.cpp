@@ -122,6 +122,17 @@ void ASpaceshipPawn::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
+	if (APlayerController* PC = Cast<APlayerController>(GetController()))
+	{
+		PC->bShowMouseCursor = true; //Displays the cursore for the mouse-based direction input
+
+		//Allow mouse to move freely on screen
+		FInputModeGameAndUI InputMode;
+		InputMode.SetHideCursorDuringCapture(false);
+		InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+		PC->SetInputMode(InputMode);
+	}
+
 	RestrictMouseToCircle(); //Clamp mouse offset for steering
 
 	//Landing sequence logic
