@@ -4,10 +4,10 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
-#include "Components/SphereComponent.h"
+#include "Components/BoxComponent.h"
 #include "LandingPad.generated.h"
 
-class USphereComponent;
+class UBoxComponent;
 class ASpaceshipPawn;
 
 UCLASS()
@@ -38,7 +38,7 @@ public:
 	UStaticMeshComponent* PadMesh;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Landing Pad")
-	USphereComponent* LandingTrigger;
+	UBoxComponent* LandingTrigger;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly)
 	ASpaceshipPawn* OverlappingShip;

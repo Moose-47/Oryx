@@ -28,7 +28,7 @@ protected:
     virtual void SetupPlayerInputComponent(UInputComponent* PlayerInputComponent) override;
 
 #pragma region Components
-    UPROPERTY(VisibleAnywhere)
+    UPROPERTY(BlueprintReadWrite, VisibleAnywhere)
     UCapsuleComponent* Capsule;
 
     UPROPERTY(VisibleAnywhere)

@@ -18,9 +18,9 @@ ALandingPad::ALandingPad()
 	RootComponent = PadMesh;
 
 	//Trigger Sphere
-	LandingTrigger = CreateDefaultSubobject<USphereComponent>(TEXT("LandingTrigger"));
+	LandingTrigger = CreateDefaultSubobject<UBoxComponent>(TEXT("LandingTrigger"));
 	LandingTrigger->SetupAttachment(RootComponent);
-	LandingTrigger->SetSphereRadius(500.f);
+    LandingTrigger->SetBoxExtent(FVector(400.f, 400.f, 300.f));
 	LandingTrigger->SetCollisionProfileName(TEXT("Trigger"));
 
 	//Bind overlap events
