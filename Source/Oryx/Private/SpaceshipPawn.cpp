@@ -255,7 +255,7 @@ void ASpaceshipPawn::UpdateRotation(float DeltaTime)
 
 	//Roll (Y-axis rotation) gives the ship a banking effect when turning.
 	//It uses only the X offset (horizontal movement) to roll into turns.
-	float TargetRoll = Offset.X * 45.f;    //Up to +/-30 degrees max roll
+	float TargetRoll = Offset.X * 45.f;    //Up to +/-45 degrees max roll
 
 
 	//Combine these into a target rotation relative to the current one.

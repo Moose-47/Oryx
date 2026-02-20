@@ -186,7 +186,7 @@ void AGravityGun::SnapRotationForward()
     if (!CameraComp) return;
 
     FRotator CameraRot = CameraComp->GetComponentRotation();
-    SnapTargetRotation = FRotator(0.f, CameraRot.Yaw, 0.f); //Forward in front of player
+    SnapTargetRotation = FRotator(CameraRot.Pitch, CameraRot.Yaw, 0.f); //Forward in front of player
     bSnapping = true;
 }
 
